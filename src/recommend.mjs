@@ -3,12 +3,8 @@
 // score from a model trained on your own ratings.
 import { hc } from "./hardcover.mjs";
 import { fold, mainTitle, cleanTitle } from "./match.mjs";
-import { features, train, evaluate, LOVE_MIN } from "./model.mjs";
+import { features, train, evaluate, LOVED } from "./model.mjs";
 
-export const LIKE_MIN = 4.5;
-export const COMMUNITY_MIN = 4.0; // Hardcover's average rating; Goodreads has no public API
-export const COMMUNITY_MIN_RATINGS = 50; // below this, a handful of fans sets the average
-const communityOk = (b) => (b.rating ?? 0) >= COMMUNITY_MIN && (b.ratings_count ?? 0) >= COMMUNITY_MIN_RATINGS;
 const AUTHOR_MIN_READERS = 25; // hides workbooks, summaries and other catalog noise
 const AUTHOR_PICKS = 3;
 const CATALOG_DAYS = 7;
@@ -38,7 +34,7 @@ export async function recommend(readwise, matches) {
   const lib = readwise.filter((b) => b.status !== "deleted").map((b) => ({ ...b, hc: matches[b.id] ?? null }));
   const read = lib.filter((b) => ["finished", "currently_reading", "did_not_finish"].includes(b.status));
   const shelf = lib.filter((b) => ["unsorted", "want_to_read"].includes(b.status));
-  const liked = read.filter((b) => b.status === "finished" && (b.rating ?? 0) >= LIKE_MIN && b.hc);
+  const liked = read.filter((b) => b.status === "finished" && b.rating === LOVED && b.hc);
 
   const readIds = new Set(read.map((b) => b.hc?.id).filter(Boolean));
   const shelfIds = new Set(shelf.map((b) => b.hc?.id).filter(Boolean));
@@ -64,7 +60,7 @@ export async function recommend(readwise, matches) {
       author: ratingsByAuthor(b.hc.author_ids, b),
       series: b.hc.series ? ratingsBySeries(b.hc.series.name, b) : [],
     }),
-    y: b.rating >= LOVE_MIN ? 1 : 0,
+    y: b.rating === LOVED ? 1 : 0,
   }));
   const predict = train(rows);
   const quality = evaluate(rows);
@@ -91,7 +87,6 @@ export async function recommend(readwise, matches) {
 
   const cards = [];
   const shownIds = new Set();
-  let hidden = 0;
   for (const s of seriesData) {
     const mine = seriesRead.get(s.id) ?? [];
     const readPositions = new Set(mine.map((b) => b.hc.series.position));
@@ -109,10 +104,9 @@ export async function recommend(readwise, matches) {
       .sort((a, b) => a[0] - b[0]);
     for (const [, book] of unread) shownIds.add(book.id); // keeps the author section from offering them
     // The next book is the first one after where you stopped; if you're past the end,
-    // the first one you skipped. If it fails the community bar, don't jump over it.
+    // the first one you skipped.
     const [position, book] = unread.find(([pos]) => pos > furthest) ?? unread[0] ?? [];
     if (!book) continue;
-    if (!communityOk(book)) { hidden++; continue; }
     const myRatings = mine.filter((b) => b.rating && b.status === "finished");
     const authorIds = [...new Set(mine.flatMap((b) => b.hc.author_ids))];
     cards.push({
@@ -148,7 +142,7 @@ export async function recommend(readwise, matches) {
       seen.add(fold(mainTitle(b.title)));
       // shownIds also stops a co-written book from showing once per co-author.
       if (shownIds.has(b.id) || isRead(b) || !released(b) || !isBook(b)) continue;
-      if ((b.users_count ?? 0) < AUTHOR_MIN_READERS || !communityOk(b)) continue;
+      if ((b.users_count ?? 0) < AUTHOR_MIN_READERS) continue;
       // From another series, only suggest the entry point, and only if you haven't started it.
       const fs = b.featured_book_series;
       if (fs?.series && (seriesRead.has(fs.series.id) || (fs.position != null && fs.position !== 1))) continue;
@@ -167,8 +161,7 @@ export async function recommend(readwise, matches) {
 
   const unmatched = lib.filter((b) => !b.hc && b.status === "finished").map((b) => ({ title: mainTitle(b.title), author: b.author }));
   return {
-    cards, hidden, unmatched, quality,
-    stats: { read: read.length, liked: liked.length, likeMin: LIKE_MIN, loveMin: LOVE_MIN,
-      communityMin: COMMUNITY_MIN, communityMinRatings: COMMUNITY_MIN_RATINGS },
+    cards, unmatched, quality,
+    stats: { read: read.length, liked: liked.length, loved: LOVED },
   };
 }

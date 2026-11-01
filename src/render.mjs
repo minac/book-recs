@@ -32,7 +32,7 @@ function card(c) {
     </div></a>`;
 }
 
-export function render({ cards, hidden, unmatched, quality, stats }, generatedAt) {
+export function render({ cards, unmatched, quality, stats }, generatedAt) {
   const series = cards.filter((c) => c.kind === "series");
   const authors = cards.filter((c) => c.kind === "author");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -62,14 +62,13 @@ h1 { font-size:26px; margin:0 0 4px; } h2 { font-size:19px; margin:36px 0 12px; 
 footer { margin-top:40px; }
 </style></head><body><main>
 <h1>What to read next</h1>
-<p class="sub">Picked from ${stats.liked} books you rated ${stats.likeMin}★ or more. Only books that are already out and rated ${stats.communityMin}★ or more on Hardcover by at least ${stats.communityMinRatings} people.
-The % is the chance you'd rate the book ${stats.loveMin}★ or more, estimated from how you rated your other ${quality.n} books. Updated ${esc(generatedAt)}.</p>
+<p class="sub">Picked from ${stats.liked} books you rated ${stats.loved}★. Only books that are already out.
+The % is the chance you'd rate the book ${stats.loved}★ too, estimated from how you rated your other ${quality.n} books. Updated ${esc(generatedAt)}.</p>
 <h2>Next in your series</h2>
 <div class="grid">${series.map(card).join("\n")}</div>
-${hidden ? `<p class="sub">${hidden} more series have a next book under ${stats.communityMin}★ or with fewer than ${stats.communityMinRatings} ratings on Hardcover, so they're hidden.</p>` : ""}
 <h2>More from authors you loved</h2>
 <div class="grid">${authors.map(card).join("\n")}</div>
-<footer>How much to trust the %: tested on your own history, it ranks a book you loved above one you didn't ${Math.round(quality.auc * 100)}% of the time (50% would be a coin flip). You rated ${Math.round(quality.baseRate * 100)}% of your books ${stats.loveMin}★ or more.
+<footer>How much to trust the %: tested on your own history, it ranks a book you loved above one you didn't ${Math.round(quality.auc * 100)}% of the time (50% would be a coin flip). You rated ${Math.round(quality.baseRate * 100)}% of your books ${stats.loved}★.
 ${unmatched.length ? `<br>Not found on Hardcover, so left out: ${unmatched.map((u) => `${esc(u.title)} (${esc(u.author)})`).join("; ")}.` : ""}
 <br>Data from Readwise Books and <a href="https://hardcover.app">Hardcover</a>.</footer>
 </main></body></html>`;

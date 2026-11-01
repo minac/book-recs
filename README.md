@@ -16,13 +16,13 @@ My books live in three places: Goodreads, Kindle (Amazon) and Readwise Books. No
 ## How it works
 
 ```
-Readwise Books ──► match each book on Hardcover ──► loved = finished and rated 4.5★ or more
+Readwise Books ──► match each book on Hardcover ──► loved = finished and rated 5★
 (my library,         (search by title + author,             │
  with my ratings)     checked against the ISBN    ┌─────────┴──────────┐
                       or the author's last name)  series I loved     authors I loved
                                                   next unread book   other books
                                                   └─────────┬──────────┘
-                                         keep: already out, 4.0★+ from 50+ ratings on Hardcover
+                                         keep: already out
                                          add: confidence % from a model trained on my ratings
                                                             │
                                                      out/index.html
@@ -31,7 +31,7 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
 1. `src/readwise.mjs` pulls the whole library, ratings included.
 2. `src/match.mjs` finds each book on Hardcover. Readwise has no series data, and most of my Goodreads imports have no ISBN, so this match matters most.
 3. `src/recommend.mjs` picks the candidates and filters them.
-4. `src/model.mjs` trains a small logistic regression on my rated books. It predicts "rated 4.5★ or more" from my ratings of the same author, my ratings of the same series, and the book's Hardcover rating.
+4. `src/model.mjs` trains a small logistic regression on my rated books. It predicts "rated 5★" from my ratings of the same author, my ratings of the same series, and the book's Hardcover rating.
 5. `src/render.mjs` writes one static HTML page.
 
 There are no dependencies, just Node 22's built-in `fetch`.
@@ -44,7 +44,7 @@ There are no dependencies, just Node 22's built-in `fetch`.
 
 The first run takes about 6 minutes, because Hardcover's free API allows 60 requests a minute. After that it's quick: search results are cached in `data/hc-cache/`, and series and author data refreshes once a week.
 
-The thresholds are constants at the top of `src/recommend.mjs` (`LIKE_MIN`, `COMMUNITY_MIN`, `COMMUNITY_MIN_RATINGS`) and `src/model.mjs` (`LOVE_MIN`).
+The "loved" bar is `LOVED` at the top of `src/model.mjs`. I don't filter on Hardcover's community rating: it didn't predict my ratings (see below).
 
 ## What my library broke
 

@@ -1,6 +1,6 @@
 // Confidence that you'll love a book: a small logistic regression trained on your own
-// rated books. "Love" = you rated it LOVE_MIN or more, the bar you set for recommendations.
-export const LOVE_MIN = 4.5;
+// rated books. "Loved" = you rated it exactly LOVED, the same bar that picks recommendations.
+export const LOVED = 5;
 
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
