@@ -2,16 +2,22 @@
 
 ## Why
 
-My books live in three places: Goodreads, Kindle (Amazon) and Readwise Books. None of them gave me an easy way to see which next books exist in the series I already loved. Readwise Books has my library and my ratings, but no catalog of series. So I added Hardcover for its catalog. I hope to drop it and use only Readwise Books once its API exposes that data.
+**I couldn't easily see which next books exist in the series I loved.** My books live in Goodreads, Kindle and Readwise Books, and none of them shows that. Readwise Books has my library and ratings but no series catalog, so I borrowed [Hardcover](https://hardcover.app)'s. I'd drop it once the Readwise API exposes that data.
 
 ## What
 
-A local page that tells me what to read next. It looks at the books I loved in [Readwise Books](https://readwise.io/books_api) and finds two kinds of books on [Hardcover](https://hardcover.app):
+**A local page that tells me what to read next**, from the books I rated 5★ in [Readwise Books](https://readwise.io/books_api):
 
-- **The next book in each series I loved.** One per series: the first one after where I stopped. It follows each book's main series and whole positions only, because half positions (#1.5) are usually short stories.
-- **Other books by authors I loved.** Standalones, or the first book of a series I haven't started.
+- **The next book in each series I loved.** One per series, the first after where I stopped (main series, whole positions only: #1.5 is usually a short story).
+- **Other books by authors I loved.** Standalones, or #1 of a series I haven't started.
 
-It only suggests books that are already out. Each card carries a label that says how much of my own reading backs it up: "Strong match" (several books in that series or by that author, nearly all 5★), "Promising" (mixed) or "Limited evidence" (just one book). Within a label, the more books I loved, the higher a card sits, so a series where I loved four books beats one where I loved one. Author picks with limited evidence are hidden. Series picks always show, because each one is the sequel to a book I rated 5★.
+Only books that are already out. Each card has a label for how much of my reading backs it:
+
+- "Strong match" means 2+ of my books in that series (or by that author), at least three quarters of them 5★.
+- "Promising" means the evidence is mixed.
+- "Limited evidence" means one book. Those are hidden for author picks and kept for series sequels.
+
+The more books I loved, the higher a card sits: four loved books beat one.
 
 ![The page at desktop width](docs/screenshot-desktop.png)
 
@@ -19,59 +25,50 @@ It only suggests books that are already out. Each card carries a label that says
 
 ```
 Readwise Books ──► match each book on Hardcover ──► loved = finished and rated 5★
-(my library,         (search by title + author,             │
- with my ratings)     checked against the ISBN    ┌─────────┴──────────┐
-                      or the author's last name)  series I loved     authors I loved
-                                                  next unread book   other books
-                                                  └─────────┬──────────┘
-                                         keep: already out
-                                         label: how many of my books back it, and how many were 5★
-                                         sort and trim: a small model trained on my ratings
-                                                            │
-                                                     out/index.html
+(+ Audible export)   (title + author, or ISBN)               │
+                                                   ┌─────────┴──────────┐
+                                                   series I loved     authors I loved
+                                                   next unread book   other books
+                                                   └─────────┬──────────┘
+                                          keep: already out
+                                          label: how many of my books back it
+                                          sort: rises with every loved book
+                                                             │
+                                                      out/index.html
 ```
 
-1. `src/readwise.mjs` pulls the whole library, ratings included. `src/audible.mjs` adds an Audible export if you have one (see below).
-2. `src/match.mjs` finds each book on Hardcover. Readwise has no series data, and most of my Goodreads imports have no ISBN, so this match matters most.
-3. `src/recommend.mjs` picks the candidates and filters them.
-4. `src/model.mjs` scores each card. Cards sort by a cautious estimate of my 5★ rate in that series or with that author, which rises with every loved book. A small logistic regression trained on my ratings breaks ties and hides the weakest picks. Neither uses Hardcover's community rating.
-5. `src/render.mjs` writes one static HTML page.
-
-There are no dependencies, just Node's built-in `fetch`. It needs Node 26 (the current LTS); with nvm, run `nvm use` in the repo.
+- `src/readwise.mjs` and `src/audible.mjs` load the library. `src/match.mjs` finds each book on Hardcover (most of my Goodreads imports have no ISBN, so this matters most).
+- `src/recommend.mjs` picks and filters. `src/model.mjs` sorts by a cautious estimate of my 5★ rate per series or author; a small model trained on my ratings breaks ties and hides the weakest. Neither uses Hardcover's community rating, which didn't predict mine.
+- `src/render.mjs` writes one static page. No dependencies, Node 26 (`nvm use`).
 
 ## Run it
 
-1. Put your Readwise token (from [readwise.io/access_token](https://readwise.io/access_token)) in `api-key.txt`. You need Readwise Books access, or the API returns 403.
-2. Put your Hardcover token (from [hardcover.app/account/api](https://hardcover.app/account/api)) in `hardcover-key.txt`, or set `HARDCOVER_TOKEN`.
+1. Put your [Readwise token](https://readwise.io/access_token) in `api-key.txt` (needs Readwise Books access, or you get a 403).
+2. Put your [Hardcover token](https://hardcover.app/account/api) in `hardcover-key.txt`, or set `HARDCOVER_TOKEN`.
 3. Run `npm start`, then `npm run open`.
 
-The first run takes about 6 minutes, because Hardcover's free API allows 60 requests a minute. After that it's quick: search results are cached in `data/hc-cache/`, and series and author data refreshes once a week.
+The first run takes about 6 minutes (Hardcover allows 60 requests a minute). After that, searches come from `data/hc-cache/` and catalog data refreshes weekly. The "loved" bar is `LOVED` in `src/model.mjs`. To hide a book for good, add its Hardcover id to `skip.json` (I use it for catalog errors, like two authors merged under one name).
 
-The "loved" bar is `LOVED` at the top of `src/model.mjs`. Hardcover's community rating shows on each card, but nothing filters or scores on it: it didn't predict my ratings.
+### Add Audible (optional)
 
-### Add your Audible library (optional)
-
-Audible has no API, so this step is manual. It makes audiobooks you finished or abandoned count as read, so they don't show up as recommendations.
+**Audible has no API, so this is manual.** It stops finished or abandoned audiobooks from coming back as suggestions.
 
 1. Sign in at [audible.com/library/titles](https://www.audible.com/library/titles) in Chrome.
-2. Open DevTools (`Cmd+Option+J` on a Mac), paste the contents of `scripts/audible-export.js` into the console, and press Enter. It reads your library pages and purchase history, then copies the result to your clipboard. Nothing leaves your browser.
-3. Save the clipboard as `data/audible.json`.
-4. Run `npm start` again.
+2. Paste `scripts/audible-export.js` into the DevTools console (`Cmd+Option+J`) and press Enter. It copies your library and purchase dates to the clipboard; nothing leaves your browser.
+3. Save the clipboard as `data/audible.json`, then run `npm start`.
 
-An unfinished audiobook counts as did-not-finish once it's over 6 months old. Titles from Audible Plus or gifts have no purchase date, so you can also set `dnfFrom` in `data/audible.json` to a title: that title and every unfinished one added before it count as did-not-finish. Where a book is in both libraries, Readwise wins on ratings and the furthest status wins (finished, then did-not-finish, then reading). `data/` is gitignored, so your library stays on your machine.
-
-To hide a book for good, add its Hardcover id to `skip.json`. I use it for catalog errors, like Hardcover merging two different authors who share a name.
+An unfinished audiobook counts as did-not-finish after 6 months. Audible Plus and gifts have no purchase date, so set `dnfFrom` to a title: it and every older unfinished one count as did-not-finish. If a book is in both libraries, Readwise wins on ratings and the furthest status wins. `data/` is gitignored.
 
 ## Learnings
 
-Here's the story, including the bits where I was confidently wrong. Each fix has a comment in the code.
+Here's the story, including the bits where I was confidently wrong (each fix has a comment in the code):
 
-- Hardcover's search ranks "Summary of Atomic Habits by James Clear" knock-offs above the real book, so the matcher retries with the title alone.
-- God Emperor of Dune lists "Dune" as an alternate title, so exact matches on the real title win.
-- Hardcover keeps duplicate books (translations, editions) and even duplicate series. A position counts as read if any copy at that position is a book I read.
-- Murderbot books are filed as novellas, so a "books only" filter would hide them.
-- Hardcover's data has other gaps too: some release dates are wrong, some publisher imprints show up as series, and a few books credit contributors as authors.
-- Hardcover's community rating didn't predict my ratings at all. Goodreads ratings might, but Goodreads closed its API in 2020.
-- It's built for one person's library on one machine. Your tokens, cache and the generated page stay local (`.gitignore` covers them), and Hardcover's API is for personal, non-commercial use.
+- Hardcover's search ranks "Summary of Atomic Habits by James Clear" above the real book, so the matcher retries with the title alone.
+- God Emperor of Dune lists "Dune" as an alternate title, so exact titles win.
+- Hardcover keeps duplicate books and even duplicate series. A position counts as read if any copy of it is.
+- Murderbot books are novellas, so a "books only" filter would hide them.
+- Some release dates are wrong, some imprints show up as series, and some contributors are credited as authors.
+- Hardcover's community rating didn't predict my ratings at all. Goodreads' might, but its API closed in 2020.
+- It's built for one library on one machine. Tokens, cache and the page stay local, and Hardcover's API is for personal, non-commercial use.
 
 Claude wrote most of the code. I steered it, with care to always ground it in data: every fix above came from a run against my real library, not from a guess.
