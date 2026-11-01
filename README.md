@@ -2,10 +2,10 @@
 
 A local page that tells me what to read next. It looks at the books I loved in [Readwise Books](https://readwise.io/books_api) and finds two kinds of books on [Hardcover](https://hardcover.app):
 
-- **The next book in each series I loved.** One per series: the first one after where I stopped.
+- **The next book in each series I loved.** One per series: the first one after where I stopped. It follows each book's main series and whole positions only, because half positions (#1.5) are usually short stories.
 - **Other books by authors I loved.** Standalones, or the first book of a series I haven't started.
 
-It only suggests books that are already out. Each card shows a confidence %, which is the chance I'd love the book, estimated from how I rated everything else. Books under 50% don't show.
+It only suggests books that are already out. Each card carries a label that says how much of my own reading backs it up: "Strong match" (several books in that series or by that author, nearly all 5★), "Promising" (mixed) or "Limited evidence" (just one book). Within a label, the more books I loved, the higher a card sits, so a series where I loved four books beats one where I loved one. Author picks with limited evidence are hidden. Series picks always show, because each one is the sequel to a book I rated 5★.
 
 ![The page at desktop width](docs/screenshot-desktop.png)
 
@@ -23,8 +23,8 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
                                                   next unread book   other books
                                                   └─────────┬──────────┘
                                          keep: already out
-                                         add: confidence % from a model trained on my ratings
-                                         keep: 50% or more
+                                         label: how many of my books back it, and how many were 5★
+                                         sort and trim: a small model trained on my ratings
                                                             │
                                                      out/index.html
 ```
@@ -32,7 +32,7 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
 1. `src/readwise.mjs` pulls the whole library, ratings included. `src/audible.mjs` adds an Audible export if you have one (see below).
 2. `src/match.mjs` finds each book on Hardcover. Readwise has no series data, and most of my Goodreads imports have no ISBN, so this match matters most.
 3. `src/recommend.mjs` picks the candidates and filters them.
-4. `src/model.mjs` trains a small logistic regression on my rated books. It predicts "rated 5★" from my ratings of the same author, my ratings of the same series, and the book's Hardcover rating.
+4. `src/model.mjs` scores each card. Cards sort by a cautious estimate of my 5★ rate in that series or with that author, which rises with every loved book. A small logistic regression trained on my ratings breaks ties and hides the weakest picks. Neither uses Hardcover's community rating.
 5. `src/render.mjs` writes one static HTML page.
 
 There are no dependencies, just Node's built-in `fetch`. It needs Node 26 (the current LTS); with nvm, run `nvm use` in the repo.
@@ -45,7 +45,7 @@ There are no dependencies, just Node's built-in `fetch`. It needs Node 26 (the c
 
 The first run takes about 6 minutes, because Hardcover's free API allows 60 requests a minute. After that it's quick: search results are cached in `data/hc-cache/`, and series and author data refreshes once a week.
 
-The "loved" bar is `LOVED` at the top of `src/model.mjs`. I don't filter on Hardcover's community rating: it didn't predict my ratings.
+The "loved" bar is `LOVED` at the top of `src/model.mjs`. Hardcover's community rating shows on each card, but nothing filters or scores on it: it didn't predict my ratings.
 
 ### Add your Audible library (optional)
 

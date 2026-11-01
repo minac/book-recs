@@ -30,23 +30,36 @@ export async function hc(query, variables = {}, { cache = true, maxAgeDays = Inf
     } catch {}
   }
 
+  let last = "";
   for (let attempt = 0; attempt < 5; attempt++) {
     const wait = lastCall + MIN_GAP_MS - Date.now();
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (wait > 0) await sleep(wait);
     lastCall = Date.now();
 
-    const res = await fetch(URL_API, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${await getToken()}`,
-        "User-Agent": "book-recs/0.1 (personal script)",
-      },
-      body: JSON.stringify({ query, variables }),
-    });
+    let res;
+    try {
+      res = await fetch(URL_API, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await getToken()}`,
+          "User-Agent": "book-recs/0.1 (personal script)",
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+    } catch (err) {
+      last = `network error: ${err.message}`; // a blip shouldn't kill a 6-minute build
+      await sleep(2 ** attempt * 1000);
+      continue;
+    }
     if (res.status === 429) {
-      const s = Number(res.headers.get("retry-after") ?? 10);
-      await new Promise((r) => setTimeout(r, s * 1000));
+      last = "rate limited";
+      await sleep(Number(res.headers.get("retry-after") ?? 10) * 1000);
+      continue;
+    }
+    if (res.status >= 500) {
+      last = `HTTP ${res.status}`;
+      await sleep(2 ** attempt * 1000);
       continue;
     }
     if (res.status === 401 || res.status === 403) {
@@ -58,5 +71,7 @@ export async function hc(query, variables = {}, { cache = true, maxAgeDays = Inf
     await writeFile(file, JSON.stringify(body.data));
     return body.data;
   }
-  throw new Error("Hardcover: still rate limited after 5 tries");
+  throw new Error(`Hardcover: gave up after 5 tries (${last})`);
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

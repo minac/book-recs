@@ -3,8 +3,8 @@
 // score from a model trained on your own ratings.
 import { readFileSync } from "node:fs";
 import { hc } from "./hardcover.mjs";
-import { fold, mainTitle, cleanTitle } from "./match.mjs";
-import { features, train, evaluate, LOVED } from "./model.mjs";
+import { fold, mainTitle, cleanTitle, firstAuthor, lastName } from "./match.mjs";
+import { features, train, evaluate, strength, LOVED } from "./model.mjs";
 
 const MIN_CONFIDENCE = 50; // %; below this the model leans towards "you won't love it"
 const AUTHOR_MIN_READERS = 25; // hides workbooks, summaries and other catalog noise
@@ -25,108 +25,147 @@ const AUTHORS_Q = `query($ids:[Int!]){ authors(where:{id:{_in:$ids}}){ id name
 const chunks = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 const today = new Date().toISOString().slice(0, 10);
 
+// Hardcover has junk dates like "0030-01-01". An implausible year means "unknown", and an
+// unknown date doesn't count as released.
+const saneYear = (y) => y >= 1450 && y <= 2100;
 function released(b) {
-  if (b.release_date) return b.release_date <= today;
-  return b.release_year != null && b.release_year < Number(today.slice(0, 4));
+  if (b.release_date && saneYear(Number(b.release_date.slice(0, 4)))) return b.release_date <= today;
+  return saneYear(b.release_year) && b.release_year < Number(today.slice(0, 4));
 }
 // 1 = book, 2 = novella. Short stories (3) and the rest are noise here, and so are
 // companion workbooks ("The Atomic Habits Workbook"), which Hardcover files as books.
-const COMPANION = /\b(workbook|journal|planner|notebook|study guide|coloring book)\b/i;
+const COMPANION = /\b(workbooks?|journals?|planners?|notebooks?|study guides?|coloring books?)\b/i;
 // Hardcover book ids to never suggest, for catalog errors no rule can catch.
 const SKIP = new Set(JSON.parse(readFileSync(new URL("../skip.json", import.meta.url), "utf8")).map((s) => s.id));
 const isBook = (b) => (b.book_category_id == null || b.book_category_id <= 2) && !COMPANION.test(b.title) && !SKIP.has(b.id);
+// Whole positions only: half positions (#1.5) are short stories, comic adaptations and
+// story collections, even when Hardcover files them as books.
+const countsAsEntry = (pos) => Number.isInteger(pos) && pos >= 1;
 
-export async function recommend(readwise, matches) {
-  const lib = readwise.filter((b) => b.status !== "deleted").map((b) => ({ ...b, hc: matches[b.id] ?? null }));
+// Labels come from the evidence, not the score: on real data the score barely moves
+// (most cards land within a few points), while "4 of your 5 books by her were 5★" vs
+// "one book" is the difference a reader can act on.
+export const LABELS = ["Strong match", "Promising", "Limited evidence"];
+function label({ books, loved }) {
+  if (books <= 1) return "Limited evidence";
+  return loved / books >= 0.75 ? "Strong match" : "Promising";
+}
+
+const lastNames = (b) => new Set([firstAuthor(b.author), ...(b.hc?.author_names ?? [])].map(lastName).filter(Boolean));
+
+export async function recommend(library, matches) {
+  const lib = library.filter((b) => b.status !== "deleted").map((b) => ({ ...b, hc: matches[b.id] ?? null }));
   const read = lib.filter((b) => ["finished", "currently_reading", "did_not_finish"].includes(b.status));
   const shelf = lib.filter((b) => ["unsorted", "want_to_read"].includes(b.status));
   const liked = read.filter((b) => b.status === "finished" && b.rating === LOVED && b.hc);
 
-  const readIds = new Set(read.map((b) => b.hc?.id).filter(Boolean));
-  const shelfIds = new Set(shelf.map((b) => b.hc?.id).filter(Boolean));
-  // Hardcover has duplicate book rows, so also follow canonical_id and compare full
-  // titles. Not main titles: "Hitchhiker's Guide to the Galaxy: Mostly Harmless" exists.
-  const readTitles = new Set(read.map((b) => fold(cleanTitle(b.title))));
-  const shelfTitles = new Set(shelf.map((b) => fold(cleanTitle(b.title))));
-  const known = (ids, titles) => (b) =>
-    ids.has(b.id) || ids.has(b.canonical_id) || titles.has(fold(cleanTitle(b.title)));
-  const isRead = known(readIds, readTitles);
-  const onShelf = known(shelfIds, shelfTitles);
+  // Hardcover has duplicate book rows, so compare ids both ways through canonical_id, then
+  // fall back to the full title plus an author's last name. Not the main title alone:
+  // "Hitchhiker's Guide to the Galaxy: Mostly Harmless" exists. Not the title without an
+  // author: Robinson's "Home" isn't Morrison's.
+  function index(books) {
+    const ids = new Set(books.flatMap((b) => [b.hc?.id, b.hc?.canonical_id]).filter(Boolean));
+    const titles = new Set(books.flatMap((b) => [...lastNames(b)].map((ln) => `${fold(cleanTitle(b.title))}|${ln}`)));
+    return (b, authors) =>
+      ids.has(b.id) || ids.has(b.canonical_id) || authors.some((a) => titles.has(`${fold(cleanTitle(b.title))}|${lastName(a)}`));
+  }
+  const isRead = index(read);
+  const onShelf = index(shelf);
 
   // ---- your ratings, for the confidence model ----
   const rated = read.filter((b) => b.status === "finished" && b.rating && b.hc);
-  const ratingsByAuthor = (ids, except) =>
-    rated.filter((b) => b !== except && b.hc.author_ids.some((id) => ids.includes(id))).map((b) => b.rating);
-  const ratingsBySeries = (name, except) =>
-    rated.filter((b) => b !== except && b.hc.series && fold(b.hc.series.name) === fold(name)).map((b) => b.rating);
-
-  const rows = rated.map((b) => ({
+  const ratingsByAuthor = (ids, pool, except) =>
+    pool.filter((b) => b !== except && b.hc.author_ids.some((id) => ids.includes(id))).map((b) => b.rating);
+  const ratingsBySeries = (name, pool, except) =>
+    pool.filter((b) => b !== except && b.hc.featured && fold(b.hc.featured.name) === fold(name)).map((b) => b.rating);
+  const toRow = (b, pool) => ({
     x: features({
-      community: b.hc.rating, ratingsCount: b.hc.ratings_count,
-      author: ratingsByAuthor(b.hc.author_ids, b),
-      series: b.hc.series ? ratingsBySeries(b.hc.series.name, b) : [],
+      author: ratingsByAuthor(b.hc.author_ids, pool, b),
+      series: b.hc.featured ? ratingsBySeries(b.hc.featured.name, pool, b) : [],
     }),
     y: b.rating === LOVED ? 1 : 0,
-  }));
-  const predict = train(rows);
-  const quality = evaluate(rows);
-  const confidence = (book, author, series) =>
-    Math.round(100 * predict(features({ community: book.rating, ratingsCount: book.ratings_count, author, series })));
+  });
+  const predict = train(rated.map((b) => toRow(b, rated)));
+  const quality = evaluate(rated, toRow);
+  // evidence: your ratings the card rests on (the series' books for a series card, the
+  // author's for an author card). Cards sort by its strength, which grows with every loved
+  // book; the model's mean-based score can't tell 1 of 1 loved from 4 of 4.
+  const score = (evidenceRatings, author, series) => {
+    const confidence = Math.round(100 * predict(features({ author, series })));
+    const books = evidenceRatings.length;
+    const loved = evidenceRatings.filter((r) => r === LOVED).length;
+    const evidence = { books, loved };
+    return { confidence, strength: strength(loved, books, quality.baseRate), evidence, label: label(evidence) };
+  };
 
   // ---- series: only the next book ----
-  const seriesRead = new Map(); // series id -> your read books in it
-  // Hardcover can hold one series twice under the same name (The Phoenix Project).
-  const readByName = new Set();
+  const seriesRead = new Map(); // featured series id -> your read books in it
+  const started = new Set(); // every series you've read in, by id and by name
   for (const b of read) {
-    const s = b.hc?.series;
-    if (!s) continue;
-    readByName.add(`${fold(s.name)}#${s.position}`);
-    if (!seriesRead.has(s.id)) seriesRead.set(s.id, []);
-    seriesRead.get(s.id).push(b);
+    for (const s of b.hc?.series ?? []) started.add(s.id).add(fold(s.name));
+    const f = b.hc?.featured;
+    if (!f) continue;
+    if (!seriesRead.has(f.id)) seriesRead.set(f.id, []);
+    seriesRead.get(f.id).push(b);
   }
-  const likedSeriesIds = [...new Set(liked.map((b) => b.hc.series?.id).filter(Boolean))];
+  const likedSeriesIds = [...new Set(liked.map((b) => b.hc.featured?.id).filter(Boolean))];
 
   const seriesData = [];
   for (const ids of chunks(likedSeriesIds, 10)) {
     seriesData.push(...(await hc(SERIES_Q, { ids }, { maxAgeDays: CATALOG_DAYS })).series);
   }
 
+  // Pass 1: where your books sit in each series. A position read in one copy of a series
+  // counts as read in a same-named duplicate (The Phoenix Project).
+  const readByName = new Set();
+  const positionOf = new Map(); // `${series id}:${book key}` -> position
+  for (const s of seriesData) {
+    const authors = (seriesRead.get(s.id) ?? []).flatMap((b) => b.hc.author_names);
+    for (const bs of s.book_series) {
+      if (bs.position == null || !isRead(bs.book, authors)) continue;
+      readByName.add(`${fold(s.name)}#${bs.position}`);
+      positionOf.set(`${s.id}:${bs.book.canonical_id ?? bs.book.id}`, bs.position);
+    }
+  }
+
   const cards = [];
   const shownIds = new Set();
   for (const s of seriesData) {
     const mine = seriesRead.get(s.id) ?? [];
-    const readPositions = new Set(mine.map((b) => b.hc.series.position));
+    const authors = [...new Set(mine.flatMap((b) => b.hc.author_names))];
+    const readPositions = new Set();
     const byPosition = new Map(); // first canonical row per position is the most-read (query order)
     for (const bs of s.book_series) {
       if (bs.position == null) continue;
       // Any row at a position counts as read: translations and duplicates share positions.
-      if (isRead(bs.book) || readByName.has(`${fold(s.name)}#${bs.position}`)) readPositions.add(bs.position);
-      if (!Number.isInteger(bs.position) || bs.position < 1 || bs.book.canonical_id) continue;
+      if (readByName.has(`${fold(s.name)}#${bs.position}`)) readPositions.add(bs.position);
+      if (!countsAsEntry(bs.position) || bs.book.canonical_id) continue;
       if (!byPosition.has(bs.position)) byPosition.set(bs.position, bs.book);
     }
     const furthest = Math.max(0, ...readPositions);
     const unread = [...byPosition]
-      .filter(([pos, book]) => !readPositions.has(pos) && !isRead(book) && released(book) && isBook(book))
+      .filter(([pos, book]) => !readPositions.has(pos) && !isRead(book, authors) && released(book) && isBook(book))
       .sort((a, b) => a[0] - b[0]);
     for (const [, book] of unread) shownIds.add(book.id); // keeps the author section from offering them
     // The next book is the first one after where you stopped; if you're past the end,
     // the first one you skipped.
     const [position, book] = unread.find(([pos]) => pos > furthest) ?? unread[0] ?? [];
     if (!book) continue;
+    const pos = (b) => positionOf.get(`${s.id}:${b.hc.canonical_id ?? b.hc.id}`) ?? null;
     const myRatings = mine.filter((b) => b.rating && b.status === "finished");
     const authorIds = [...new Set(mine.flatMap((b) => b.hc.author_ids))];
     cards.push({
-      kind: "series", ...book, position, skipped: position < furthest, onShelf: onShelf(book),
+      kind: "series", ...book, position, skipped: position < furthest, onShelf: onShelf(book, authors),
       seriesName: s.name,
-      authorName: mine[0]?.hc.author_names[0] ?? "",
-      because: myRatings.sort((a, b) => a.hc.series.position - b.hc.series.position)
-        .map((b) => ({ title: b.hc.title, rating: b.rating, position: b.hc.series.position })),
-      confidence: confidence(book, ratingsByAuthor(authorIds), myRatings.map((b) => b.rating)),
+      authorName: authors[0] ?? "",
+      because: myRatings.map((b) => ({ title: b.hc.title, rating: b.rating, position: pos(b) }))
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
+      ...score(myRatings.map((b) => b.rating), ratingsByAuthor(authorIds, rated), myRatings.map((b) => b.rating)),
     });
   }
 
   // ---- authors ----
-  const authorLikes = new Map(); // author id -> liked readwise books
+  const authorLikes = new Map(); // author id -> liked library books
   for (const b of liked) {
     for (const id of b.hc.author_ids) {
       if (!authorLikes.has(id)) authorLikes.set(id, []);
@@ -147,29 +186,35 @@ export async function recommend(readwise, matches) {
       if (seen.has(fold(mainTitle(b.title)))) continue;
       seen.add(fold(mainTitle(b.title)));
       // shownIds also stops a co-written book from showing once per co-author.
-      if (shownIds.has(b.id) || isRead(b) || !released(b) || !isBook(b)) continue;
+      if (shownIds.has(b.id) || isRead(b, [a.name]) || !released(b) || !isBook(b)) continue;
       if ((b.users_count ?? 0) < AUTHOR_MIN_READERS) continue;
       // From another series, only suggest the entry point, and only if you haven't started it.
       const fs = b.featured_book_series;
-      if (fs?.series && (seriesRead.has(fs.series.id) || (fs.position != null && fs.position !== 1))) continue;
+      if (fs?.series && (started.has(fs.series.id) || started.has(fold(fs.series.name)) ||
+        (fs.position != null && fs.position !== 1))) continue;
       shownIds.add(b.id);
       cards.push({
-        kind: "author", ...b, onShelf: onShelf(b),
+        kind: "author", ...b, onShelf: onShelf(b, [a.name]),
         seriesName: fs?.series ? fs.series.name : null,
         authorName: a.name,
         because: authorLikes.get(a.id).map((x) => ({ title: x.hc.title, rating: x.rating })),
-        confidence: confidence(b, ratingsByAuthor([a.id]), []),
+        ...score(ratingsByAuthor([a.id], rated), ratingsByAuthor([a.id], rated), []),
       });
       if (++picks === AUTHOR_PICKS) break;
     }
   }
-  cards.sort((a, b) => b.confidence - a.confidence || (b.rating ?? 0) - (a.rating ?? 0));
-  const shown = cards.filter((c) => c.confidence >= MIN_CONFIDENCE);
+  cards.sort((a, b) => LABELS.indexOf(a.label) - LABELS.indexOf(b.label) ||
+    b.strength - a.strength || b.confidence - a.confidence || (b.rating ?? 0) - (a.rating ?? 0));
+  // An author pick resting on one book is noise next to the stronger ones. A series pick
+  // stays even then: it's the sequel to a book you rated 5★, which is the point of the page.
+  const thin = (c) => c.kind === "author" && c.label === "Limited evidence";
+  const likely = cards.filter((c) => c.confidence >= MIN_CONFIDENCE);
+  const shown = likely.filter((c) => !thin(c));
 
   const unmatched = lib.filter((b) => !b.hc && b.status === "finished").map((b) => ({ title: mainTitle(b.title), author: b.author }));
   return {
     cards: shown, unmatched, quality,
     stats: { read: read.length, liked: liked.length, loved: LOVED,
-      minConfidence: MIN_CONFIDENCE, belowConfidence: cards.length - shown.length },
+      belowConfidence: cards.length - likely.length, thinAuthorPicks: likely.length - shown.length },
   };
 }

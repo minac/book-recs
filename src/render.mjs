@@ -9,7 +9,7 @@ const stars = (r) => "★".repeat(Math.round(r));
 
 function why(c) {
   if (c.kind === "series") {
-    const read = c.because.map((b) => `#${b.position} ${stars(b.rating)}`).join(", ");
+    const read = c.because.map((b) => `${b.position != null ? `#${b.position}` : esc(b.title)} ${stars(b.rating)}`).join(", ");
     const where = c.skipped ? `the first one you skipped in ${esc(c.seriesName)}` : `next in ${esc(c.seriesName)}`;
     return `#${c.position}, ${where}. You read ${read}.`;
   }
@@ -18,13 +18,23 @@ function why(c) {
   return `Because you loved ${liked}.${series}`;
 }
 
+const TONE = { "Strong match": "high", Promising: "mid", "Limited evidence": "low" };
+
+function evidence(c) {
+  const { books, loved } = c.evidence;
+  const by = c.kind === "series" ? `in ${esc(c.seriesName)}` : `by ${esc(c.authorName)}`;
+  return books === 1
+    ? `Based on 1 of your books ${by}.`
+    : `Based on ${books} of your books ${by}: ${loved} rated 5★.`;
+}
+
 function card(c) {
   const cover = c.image?.url ? `<img src="${esc(c.image.url)}" alt="" loading="lazy">` : `<div class="nocover"></div>`;
-  const tone = c.confidence >= 60 ? "high" : c.confidence >= 40 ? "mid" : "low";
   return `<a class="card" href="https://hardcover.app/books/${esc(c.slug)}" target="_blank" rel="noopener">
     ${cover}
     <div class="body">
-      <span class="conf ${tone}">${c.confidence}%</span>
+      <span class="conf ${TONE[c.label]}">${esc(c.label)}</span>
+      <span class="evidence">${evidence(c)}</span>
       <span class="title">${esc(c.title)}</span>
       <span class="author">${[esc(c.authorName), year(c)].filter(Boolean).join(" · ")}</span>
       <span class="why">${why(c)}</span>
@@ -54,7 +64,8 @@ h1 { font-size:26px; margin:0 0 4px; } h2 { font-size:19px; margin:36px 0 12px; 
 .card:hover { border-color:var(--accent); }
 .card img, .nocover { flex:0 0 84px; width:84px; height:126px; object-fit:cover; border-radius:4px; background:var(--line); }
 .body { display:flex; flex-direction:column; gap:3px; min-width:0; }
-.conf { font-weight:700; font-size:20px; line-height:1; } .high { color:var(--high); } .mid { color:var(--mid); } .low { color:var(--low); }
+.conf { font-weight:700; font-size:15px; line-height:1.2; } .high { color:var(--high); } .mid { color:var(--mid); } .low { color:var(--low); }
+.evidence { color:var(--muted); font-size:12px; margin-bottom:4px; }
 .title { font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .author, .why, .meta { color:var(--muted); font-size:12.5px; }
 .why { color:var(--fg); }
@@ -63,13 +74,15 @@ footer { margin-top:40px; }
 </style></head><body><main>
 <h1>What to read next</h1>
 <p class="sub">Picked from ${stats.liked} books you rated ${stats.loved}★. Only books that are already out.
-The % is the chance you'd rate the book ${stats.loved}★ too, estimated from how you rated your other ${quality.n} books.
-${stats.belowConfidence} more books scored under ${stats.minConfidence}%, so they're hidden. Updated ${esc(generatedAt)}.</p>
+Strong match: at least 2 of your books in that series (or by that author), and three quarters or more of them ${stats.loved}★. Limited evidence: just 1 of your books. Promising: the rest. The more books you loved, the higher a card sits.
+Hidden: ${stats.thinAuthorPicks} author picks that rest on just 1 of your books, and ${stats.belowConfidence} books that looked unlikely to be ${stats.loved}★ reads. Series picks always show. Updated ${esc(generatedAt)}.</p>
 <h2>Next in your series</h2>
 <div class="grid">${series.map(card).join("\n")}</div>
 <h2>More from authors you loved</h2>
 <div class="grid">${authors.map(card).join("\n")}</div>
-<footer>How much to trust the %: tested on your own history, it ranks a book you loved above one you didn't ${Math.round(quality.auc * 100)}% of the time (50% would be a coin flip). You rated ${Math.round(quality.baseRate * 100)}% of your books ${stats.loved}★.
+<footer>Within a label, cards are sorted by a score from a small model trained on your ${quality.n} rated books. ${quality.auc == null
+  ? "There aren't enough rated books (or enough variety in your ratings) to test it yet."
+  : `Tested on your own history, it ranks a book you loved above one you didn't ${Math.round(quality.auc * 100)}% of the time (50% would be a coin flip).`} You rated ${Math.round(quality.baseRate * 100)}% of your books ${stats.loved}★.
 ${unmatched.length ? `<br>Not found on Hardcover, so left out: ${unmatched.map((u) => `${esc(u.title)} (${esc(u.author)})`).join("; ")}.` : ""}
 <br>Data from Readwise Books and <a href="https://hardcover.app">Hardcover</a>.</footer>
 </main></body></html>`;

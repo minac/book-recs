@@ -33,18 +33,31 @@
   // or gifts have no purchase, so they keep added: null.
   const years = [...(await get("/account/purchase-history")).querySelectorAll('select[name="df"] option')]
     .map((o) => o.value).filter((v) => /^\d{4}$/.test(v));
-  const orders = [];
+  const orders = new Map(); // "title|date" -> order, so a repeated page adds nothing
   for (const year of years) {
-    const doc = await get(`/account/purchase-history?tf=orders&df=${year}&ps=40`);
-    for (const tr of doc.querySelectorAll("tr")) {
-      const text = clean(tr.textContent);
-      const d = text.match(/(\d{2})-(\d{2})-(\d{4})/);
-      if (d) orders.push({ title: norm(text.split(" By: ")[0]), added: `${d[3]}-${d[1]}-${d[2]}` });
+    // Up to 40 orders a page. Stop when a page brings nothing new, which also covers
+    // Audible ignoring the page parameter and serving page 1 again.
+    for (let pn = 1; pn <= 20; pn++) {
+      const doc = await get(`/account/purchase-history?tf=orders&df=${year}&ps=40&pn=${pn}`);
+      let fresh = 0;
+      for (const tr of doc.querySelectorAll("tr")) {
+        const text = clean(tr.textContent);
+        const d = text.match(/(\d{2})-(\d{2})-(\d{4})/);
+        if (!d) continue;
+        const order = { title: norm(text.split(" By: ")[0]), added: `${d[3]}-${d[1]}-${d[2]}` };
+        const key = `${order.title}|${order.added}`;
+        if (!orders.has(key)) { orders.set(key, order); fresh++; }
+      }
+      if (fresh < 40) break;
     }
   }
+  // The order shows a shorter title ("The Explosive Child"); the library may add subtitles.
+  // Match the title cut at any ":" ("Radical Candor: Fully Revised & Updated Edition"),
+  // never an arbitrary prefix, or "Dune" would date "Dune Messiah".
   for (const b of books) {
-    const t = norm(b.title);
-    b.added = orders.find((o) => o.title && (t.startsWith(o.title) || o.title.startsWith(t)))?.added ?? null;
+    const parts = b.title.split(":");
+    const titles = parts.map((_, i) => norm(parts.slice(0, i + 1).join(":")));
+    b.added = [...orders.values()].find((o) => titles.includes(o.title))?.added ?? null;
   }
 
   const out = { exportedAt: new Date().toISOString().slice(0, 10), dnfFrom: null, books };
