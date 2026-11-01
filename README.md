@@ -60,7 +60,7 @@ An unfinished audiobook counts as did-not-finish once it's over 6 months old. Ti
 
 To hide a book for good, add its Hardcover id to `skip.json`. I use it for catalog errors, like Hardcover merging two different authors who share a name.
 
-## What my library broke
+## Learnings
 
 Here's the story, including the bits where I was confidently wrong. Each fix has a comment in the code.
 
@@ -68,12 +68,8 @@ Here's the story, including the bits where I was confidently wrong. Each fix has
 - God Emperor of Dune lists "Dune" as an alternate title, so exact matches on the real title win.
 - Hardcover keeps duplicate books (translations, editions) and even duplicate series. A position counts as read if any copy at that position is a book I read.
 - Murderbot books are filed as novellas, so a "books only" filter would hide them.
-
-## Limits
-
-- Goodreads ratings would be a better community signal, but Goodreads closed its API in 2020.
-- Hardcover's data has gaps: some release dates are wrong, some publisher imprints show up as series, and a few books credit contributors as authors.
-- It's built for one person's library on one machine. Your tokens, cache and the generated page stay local (`.gitignore` covers them).
-- Hardcover's API is for personal, non-commercial use.
+- Hardcover's data has other gaps too: some release dates are wrong, some publisher imprints show up as series, and a few books credit contributors as authors.
+- Hardcover's community rating didn't predict my ratings at all. Goodreads ratings might, but Goodreads closed its API in 2020.
+- It's built for one person's library on one machine. Your tokens, cache and the generated page stay local (`.gitignore` covers them), and Hardcover's API is for personal, non-commercial use.
 
 Claude wrote most of the code. I steered it, with care to always ground it in data: every fix above came from a run against my real library, not from a guess.
