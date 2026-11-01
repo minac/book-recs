@@ -35,7 +35,7 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
 4. `src/model.mjs` trains a small logistic regression on my rated books. It predicts "rated 5★" from my ratings of the same author, my ratings of the same series, and the book's Hardcover rating.
 5. `src/render.mjs` writes one static HTML page.
 
-There are no dependencies, just Node 22's built-in `fetch`.
+There are no dependencies, just Node's built-in `fetch`. It needs Node 26 (the current LTS); with nvm, run `nvm use` in the repo.
 
 ## Run it
 
