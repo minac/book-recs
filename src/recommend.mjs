@@ -1,10 +1,12 @@
 // Turns the Readwise library + Hardcover matches into book cards: the next unread book in
 // each series you loved, and other books by authors you loved. Each card gets a confidence
 // score from a model trained on your own ratings.
+import { readFileSync } from "node:fs";
 import { hc } from "./hardcover.mjs";
 import { fold, mainTitle, cleanTitle } from "./match.mjs";
 import { features, train, evaluate, LOVED } from "./model.mjs";
 
+const MIN_CONFIDENCE = 50; // %; below this the model leans towards "you won't love it"
 const AUTHOR_MIN_READERS = 25; // hides workbooks, summaries and other catalog noise
 const AUTHOR_PICKS = 3;
 const CATALOG_DAYS = 7;
@@ -27,8 +29,12 @@ function released(b) {
   if (b.release_date) return b.release_date <= today;
   return b.release_year != null && b.release_year < Number(today.slice(0, 4));
 }
-// 1 = book, 2 = novella. Short stories (3) and the rest are noise here.
-const isBook = (b) => b.book_category_id == null || b.book_category_id <= 2;
+// 1 = book, 2 = novella. Short stories (3) and the rest are noise here, and so are
+// companion workbooks ("The Atomic Habits Workbook"), which Hardcover files as books.
+const COMPANION = /\b(workbook|journal|planner|notebook|study guide|coloring book)\b/i;
+// Hardcover book ids to never suggest, for catalog errors no rule can catch.
+const SKIP = new Set(JSON.parse(readFileSync(new URL("../skip.json", import.meta.url), "utf8")).map((s) => s.id));
+const isBook = (b) => (b.book_category_id == null || b.book_category_id <= 2) && !COMPANION.test(b.title) && !SKIP.has(b.id);
 
 export async function recommend(readwise, matches) {
   const lib = readwise.filter((b) => b.status !== "deleted").map((b) => ({ ...b, hc: matches[b.id] ?? null }));
@@ -158,10 +164,12 @@ export async function recommend(readwise, matches) {
     }
   }
   cards.sort((a, b) => b.confidence - a.confidence || (b.rating ?? 0) - (a.rating ?? 0));
+  const shown = cards.filter((c) => c.confidence >= MIN_CONFIDENCE);
 
   const unmatched = lib.filter((b) => !b.hc && b.status === "finished").map((b) => ({ title: mainTitle(b.title), author: b.author }));
   return {
-    cards, unmatched, quality,
-    stats: { read: read.length, liked: liked.length, loved: LOVED },
+    cards: shown, unmatched, quality,
+    stats: { read: read.length, liked: liked.length, loved: LOVED,
+      minConfidence: MIN_CONFIDENCE, belowConfidence: cards.length - shown.length },
   };
 }

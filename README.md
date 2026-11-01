@@ -5,7 +5,7 @@ A local page that tells me what to read next. It looks at the books I loved in [
 - **The next book in each series I loved.** One per series: the first one after where I stopped.
 - **Other books by authors I loved.** Standalones, or the first book of a series I haven't started.
 
-It only suggests books that are already out. Each card shows a confidence %, which is the chance I'd love the book, estimated from how I rated everything else.
+It only suggests books that are already out. Each card shows a confidence %, which is the chance I'd love the book, estimated from how I rated everything else. Books under 50% don't show.
 
 ![The page at desktop width](docs/screenshot-desktop.png)
 
@@ -24,6 +24,7 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
                                                   └─────────┬──────────┘
                                          keep: already out
                                          add: confidence % from a model trained on my ratings
+                                         keep: 50% or more
                                                             │
                                                      out/index.html
 ```
@@ -44,7 +45,9 @@ There are no dependencies, just Node 22's built-in `fetch`.
 
 The first run takes about 6 minutes, because Hardcover's free API allows 60 requests a minute. After that it's quick: search results are cached in `data/hc-cache/`, and series and author data refreshes once a week.
 
-The "loved" bar is `LOVED` at the top of `src/model.mjs`. I don't filter on Hardcover's community rating: it didn't predict my ratings (see below).
+The "loved" bar is `LOVED` at the top of `src/model.mjs`. I don't filter on Hardcover's community rating: it didn't predict my ratings.
+
+To hide a book for good, add its Hardcover id to `skip.json`. I use it for catalog errors, like Hardcover merging two different authors who share a name.
 
 ## What my library broke
 
@@ -54,15 +57,6 @@ Here's the story, including the bits where I was confidently wrong. Each fix has
 - God Emperor of Dune lists "Dune" as an alternate title, so exact matches on the real title win.
 - Hardcover keeps duplicate books (translations, editions) and even duplicate series. A position counts as read if any copy at that position is a book I read.
 - Murderbot books are filed as novellas, so a "books only" filter would hide them.
-
-## How far to trust the %
-
-Short answer: as a tiebreaker. Tested on my own history with 5-fold cross-validation, it ranks a book I loved above one I didn't 60% of the time (50% is a coin flip). The page prints this number for your data too. Two findings surprised me:
-
-- Hardcover's community rating alone predicts my ratings no better than chance.
-- Genre and mood tags didn't help either, so I left them out.
-
-Nearly all the signal comes from how I rated the same author or series.
 
 ## Limits
 

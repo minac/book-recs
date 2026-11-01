@@ -63,7 +63,8 @@ footer { margin-top:40px; }
 </style></head><body><main>
 <h1>What to read next</h1>
 <p class="sub">Picked from ${stats.liked} books you rated ${stats.loved}★. Only books that are already out.
-The % is the chance you'd rate the book ${stats.loved}★ too, estimated from how you rated your other ${quality.n} books. Updated ${esc(generatedAt)}.</p>
+The % is the chance you'd rate the book ${stats.loved}★ too, estimated from how you rated your other ${quality.n} books.
+${stats.belowConfidence} more books scored under ${stats.minConfidence}%, so they're hidden. Updated ${esc(generatedAt)}.</p>
 <h2>Next in your series</h2>
 <div class="grid">${series.map(card).join("\n")}</div>
 <h2>More from authors you loved</h2>
