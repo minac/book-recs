@@ -9,6 +9,10 @@ It only suggests books that are already out. Each card shows a confidence %, whi
 
 ![The page at desktop width](docs/screenshot-desktop.png)
 
+## Why
+
+My books live in three places: Goodreads, Kindle (Amazon) and Readwise Books. None of them gave me an easy way to see which next books exist in the series I already loved. Readwise Books has my library and my ratings, but no catalog of series. So I added Hardcover for its catalog. I hope to drop it and use only Readwise Books once its API exposes that data.
+
 ## How it works
 
 ```
@@ -42,9 +46,9 @@ The first run takes about 6 minutes, because Hardcover's free API allows 60 requ
 
 The thresholds are constants at the top of `src/recommend.mjs` (`LIKE_MIN`, `COMMUNITY_MIN`, `COMMUNITY_MIN_RATINGS`) and `src/model.mjs` (`LOVE_MIN`).
 
-## Things I learned the hard way
+## What my library broke
 
-My own library broke the first version in a few ways (and each fix has a comment in the code):
+Here's the story, including the bits where I was confidently wrong. Each fix has a comment in the code.
 
 - Hardcover's search ranks "Summary of Atomic Habits by James Clear" knock-offs above the real book, so the matcher retries with the title alone.
 - God Emperor of Dune lists "Dune" as an alternate title, so exact matches on the real title win.
@@ -53,12 +57,12 @@ My own library broke the first version in a few ways (and each fix has a comment
 
 ## How far to trust the %
 
-Not very far, honestly. Tested on my own history with 5-fold cross-validation, it ranks a book I loved above one I didn't 60% of the time (50% is a coin flip). The page prints this number for your data too. Two findings surprised me:
+Short answer: as a tiebreaker. Tested on my own history with 5-fold cross-validation, it ranks a book I loved above one I didn't 60% of the time (50% is a coin flip). The page prints this number for your data too. Two findings surprised me:
 
 - Hardcover's community rating alone predicts my ratings no better than chance.
 - Genre and mood tags didn't help either, so I left them out.
 
-Nearly all the signal comes from how I rated the same author or series. Treat the % as a tiebreaker.
+Nearly all the signal comes from how I rated the same author or series.
 
 ## Limits
 
@@ -67,4 +71,4 @@ Nearly all the signal comes from how I rated the same author or series. Treat th
 - It's built for one person's library on one machine. Your tokens, cache and the generated page stay local (`.gitignore` covers them).
 - Hardcover's API is for personal, non-commercial use.
 
-I built this with Claude, and checked every step against my real library before moving on.
+Claude wrote most of the code. I steered it, with care to always ground it in data: every fix above came from a run against my real library, not from a guess.
