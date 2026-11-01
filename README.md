@@ -29,7 +29,7 @@ Readwise Books ──► match each book on Hardcover ──► loved = finished
                                                      out/index.html
 ```
 
-1. `src/readwise.mjs` pulls the whole library, ratings included.
+1. `src/readwise.mjs` pulls the whole library, ratings included. `src/audible.mjs` adds an Audible export if you have one (see below).
 2. `src/match.mjs` finds each book on Hardcover. Readwise has no series data, and most of my Goodreads imports have no ISBN, so this match matters most.
 3. `src/recommend.mjs` picks the candidates and filters them.
 4. `src/model.mjs` trains a small logistic regression on my rated books. It predicts "rated 5★" from my ratings of the same author, my ratings of the same series, and the book's Hardcover rating.
@@ -46,6 +46,17 @@ There are no dependencies, just Node 22's built-in `fetch`.
 The first run takes about 6 minutes, because Hardcover's free API allows 60 requests a minute. After that it's quick: search results are cached in `data/hc-cache/`, and series and author data refreshes once a week.
 
 The "loved" bar is `LOVED` at the top of `src/model.mjs`. I don't filter on Hardcover's community rating: it didn't predict my ratings.
+
+### Add your Audible library (optional)
+
+Audible has no API, so this step is manual. It makes audiobooks you finished or abandoned count as read, so they don't show up as recommendations.
+
+1. Sign in at [audible.com/library/titles](https://www.audible.com/library/titles) in Chrome.
+2. Open DevTools (`Cmd+Option+J` on a Mac), paste the contents of `scripts/audible-export.js` into the console, and press Enter. It reads your library pages and purchase history, then copies the result to your clipboard. Nothing leaves your browser.
+3. Save the clipboard as `data/audible.json`.
+4. Run `npm start` again.
+
+An unfinished audiobook counts as did-not-finish once it's over 6 months old. Titles from Audible Plus or gifts have no purchase date, so you can also set `dnfFrom` in `data/audible.json` to a title: that title and every unfinished one added before it count as did-not-finish. Where a book is in both libraries, Readwise wins on ratings and the furthest status wins (finished, then did-not-finish, then reading). `data/` is gitignored, so your library stays on your machine.
 
 To hide a book for good, add its Hardcover id to `skip.json`. I use it for catalog errors, like Hardcover merging two different authors who share a name.
 

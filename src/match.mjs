@@ -9,16 +9,17 @@ export const fold = (s) =>
     // Keep every script's letters: dropping non-Latin ones turns a Greek "Dune: Ο Μεσσίας" into "dune".
     .replace(/&/g, "and").replace(/[^\p{L}\p{N} ]+/gu, " ").replace(/\s+/g, " ").trim();
 
-// Drops a trailing "(The Murderbot Diaries, #5)".
+// Drops trailing "(The Murderbot Diaries, #5)" or Audible's "(Part 2 of 2) (Dramatized Adaptation)".
 export const cleanTitle = (t) =>
-  (t ?? "").replace(/\s+/g, " ").replace(/\s*[([][^)\]]*[)\]]\s*$/, "").trim();
+  (t ?? "").replace(/\s+/g, " ").replace(/(\s*[([][^)\]]*[)\]])+\s*$/, "").trim();
 // Also drops the subtitle, which often differs between editions.
-export const mainTitle = (t) => cleanTitle(t).split(/:| - /)[0].trim();
+export const mainTitle = (t) => cleanTitle(cleanTitle(t).split(/:| - /)[0]);
 
 // Readwise mixes "Wells, Martha" with "Martha Wells" and "A, B" author lists.
+// Audible adds credentials and roles: "Matthew Walker PhD", "Pico Iyer - introduction".
 export function firstAuthor(a) {
   if (!a) return "";
-  const parts = a.split(",").map((s) => s.trim());
+  const parts = a.replace(/\b(Dr|PhD|M\.D|MLIS)\b\.?/g, "").split(",").map((s) => s.trim());
   if (parts.length === 2 && !parts[0].includes(" ")) return `${parts[1]} ${parts[0]}`;
   return parts[0].split(/ and | & /)[0].trim();
 }
