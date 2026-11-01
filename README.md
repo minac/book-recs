@@ -1,5 +1,11 @@
 # book-recs
 
+## Why
+
+My books live in three places: Goodreads, Kindle (Amazon) and Readwise Books. None of them gave me an easy way to see which next books exist in the series I already loved. Readwise Books has my library and my ratings, but no catalog of series. So I added Hardcover for its catalog. I hope to drop it and use only Readwise Books once its API exposes that data.
+
+## What
+
 A local page that tells me what to read next. It looks at the books I loved in [Readwise Books](https://readwise.io/books_api) and finds two kinds of books on [Hardcover](https://hardcover.app):
 
 - **The next book in each series I loved.** One per series: the first one after where I stopped. It follows each book's main series and whole positions only, because half positions (#1.5) are usually short stories.
@@ -8,10 +14,6 @@ A local page that tells me what to read next. It looks at the books I loved in [
 It only suggests books that are already out. Each card carries a label that says how much of my own reading backs it up: "Strong match" (several books in that series or by that author, nearly all 5★), "Promising" (mixed) or "Limited evidence" (just one book). Within a label, the more books I loved, the higher a card sits, so a series where I loved four books beats one where I loved one. Author picks with limited evidence are hidden. Series picks always show, because each one is the sequel to a book I rated 5★.
 
 ![The page at desktop width](docs/screenshot-desktop.png)
-
-## Why
-
-My books live in three places: Goodreads, Kindle (Amazon) and Readwise Books. None of them gave me an easy way to see which next books exist in the series I already loved. Readwise Books has my library and my ratings, but no catalog of series. So I added Hardcover for its catalog. I hope to drop it and use only Readwise Books once its API exposes that data.
 
 ## How it works
 
