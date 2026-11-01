@@ -1,0 +1,10 @@
+{
+  "name": "book-recs",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/build.mjs",
+    "open": "open out/index.html"
+  }
+}
